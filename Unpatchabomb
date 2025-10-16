@@ -204,10 +204,10 @@ MinimizeButton.Text = "-"
 MinimizeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 MinimizeButton.TextSize = 25.000
 
-local function LUQKR_fake_script() -- MainFrame.MainScript 
-local script = Instance.new('LocalScript', MainFrame)
+local function LUQKR_fake_script() -- MainFrame.MainScript (reworked to type found words, '=' keybind + auto-Enter)
+    local script = Instance.new('LocalScript', MainFrame)
 
-local player = game.Players.LocalPlayer
+  local player = game.Players.LocalPlayer
 local alreadyUsed = {}
 
 -- Simple check for duplicates
@@ -240,48 +240,182 @@ function findWord(str)
 	return found
 end
 
-	script.Parent.LetterBox.FocusLost:Connect(function()
-	pcall(function()
-	subtitle = script.Parent.LetterBox.Text
-		end)
-		
-	if subtitle then
-	script.Parent.WordText.Text = subtitle .. " - Searching..."
-	wait(0.25)
-	local word = findWord(subtitle)
-	if word then
-	script.Parent.WordText.Text = "'" .. word .. "' was chosen and was copied to the Clipboard."
-	setclipboard(word)
-	else
-	script.Parent.WordText.Text = "Couldn't find a word D:"
-	end
-	else
-	script.Parent.WordText.Text = "Error, Error."
-	end
-	end)
+    -- helper: try to send raw key events through VirtualInputManager
+    local function try_type_with_vim(word)
+        local ok, vim = pcall(function()
+            return game:GetService('VirtualInputManager')
+        end)
+        if not ok or not vim then
+            return false
+        end
+
+        local function sendKeyEvent(down, key)
+            pcall(function()
+                vim:SendKeyEvent(down, key, false, game)
+            end)
+        end
+
+        for i = 1, #word do
+            local ch = string.sub(word, i, i)
+            local keyName = ch
+            if ch == ' ' then
+                keyName = 'Space'
+            else
+                keyName = string.upper(keyName)
+            end
+
+            sendKeyEvent(true, keyName)
+            task.wait(0.03)
+            sendKeyEvent(false, keyName)
+            task.wait(0.03)
+        end
+
+        return true
+    end
+
+    -- helper: try typing by sending Enum.KeyCode events (another possible exploit API)
+    local function try_type_with_keycodes(word)
+        local ok, vim = pcall(function()
+            return game:GetService('VirtualInputManager')
+        end)
+        if not ok or not vim then
+            return false
+        end
+
+        for i = 1, #word do
+            local ch = string.sub(word, i, i)
+            local keycodeName
+            if ch == ' ' then
+                keycodeName = 'Space'
+            else
+                keycodeName = string.upper(ch)
+            end
+
+            local ok2, kc = pcall(function()
+                return Enum.KeyCode[keycodeName]
+            end)
+            if not ok2 or not kc then
+                return false
+            end
+
+            pcall(function()
+                vim:SendKeyEvent(true, tostring(kc):gsub('Enum.KeyCode.', ''), false, game)
+                task.wait(0.03)
+                vim:SendKeyEvent(false, tostring(kc):gsub('Enum.KeyCode.', ''), false, game)
+            end)
+            task.wait(0.03)
+        end
+
+        return true
+    end
+
+    -- final fallback: put in clipboard (original behavior)
+    local function fallback_clipboard(word)
+        pcall(function()
+            if setclipboard then
+                setclipboard(word)
+            elseif syn and syn.clipboard_set then
+                syn.clipboard_set(word)
+            end
+        end)
+    end
+
+    -- press Enter/Return using VirtualInputManager (tries a few variants)
+    local function pressEnter()
+        pcall(function()
+            local vim = game:GetService('VirtualInputManager')
+            vim:SendKeyEvent(true, 'Return', false, game)
+            task.wait(0.02)
+            vim:SendKeyEvent(false, 'Return', false, game)
+        end)
+        pcall(function()
+            local vim = game:GetService('VirtualInputManager')
+            vim:SendKeyEvent(true, 'Enter', false, game)
+            task.wait(0.02)
+            vim:SendKeyEvent(false, 'Enter', false, game)
+        end)
+        pcall(function()
+            local vim = game:GetService('VirtualInputManager')
+            local kc = Enum.KeyCode.Return
+            vim:SendKeyEvent(true, tostring(kc):gsub('Enum.KeyCode.', ''), false, game)
+            task.wait(0.02)
+            vim:SendKeyEvent(false, tostring(kc):gsub('Enum.KeyCode.', ''), false, game)
+        end)
+    end
+
+    -- master function that tries methods in order
+    local function typeFoundWord(word)
+        if not word or word == "" then return false end
+
+        local ok1, res1 = pcall(try_type_with_vim, word)
+        if ok1 and res1 ~= false then
+            return true
+        end
+
+        local ok2, res2 = pcall(try_type_with_keycodes, word)
+        if ok2 and res2 ~= false then
+            return true
+        end
+
+        fallback_clipboard(word)
+        return false
+    end
+
+    -- performs search, types the found word, then presses Enter
+    local function doSearchAndSubmit(subtitle)
+        if subtitle then
+            script.Parent.WordText.Text = subtitle .. ' - Searching...'
+            wait(0.25)
+            local word = findWord(subtitle)
+            if word then
+                local typed = typeFoundWord(word)
+                if typed then
+                    script.Parent.WordText.Text = "'" .. word .. "' was chosen and typed into the client."
+                    -- short pause to ensure typing finished
+                    task.wait(0.05)
+                    pressEnter()
+                else
+                    script.Parent.WordText.Text = "'" .. word .. "' was chosen but typing failed. Copied to clipboard instead."
+                end
+            else
+                script.Parent.WordText.Text = "Couldn't find a word D:"
+            end
+        else
+            script.Parent.WordText.Text = 'Error, Error.'
+        end
+    end
+
+    -- original hook: UI focus lost (preserves original Enter behavior)
+    script.Parent.LetterBox.FocusLost:Connect(function(enterPressed)
+        pcall(function()
+            subtitle = script.Parent.LetterBox.Text
+        end)
+
+        if enterPressed then
+            doSearchAndSubmit(subtitle)
+        end
+    end)
+
+    -- NEW: '=' keybind (only when LetterBox is focused)
+    local UIS = game:GetService('UserInputService')
+    UIS.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if input.UserInputType == Enum.UserInputType.Keyboard then
+            -- support both Equals and KeypadEquals if available
+            if input.KeyCode == Enum.KeyCode.Equals or input.KeyCode == Enum.KeyCode.KeypadEquals then
+                -- ensure LetterBox is focused before acting
+                pcall(function()
+                    if script.Parent.LetterBox:IsFocused() then
+                        local subtitle = script.Parent.LetterBox.Text
+                        doSearchAndSubmit(subtitle)
+                    end
+                end)
+            end
+        end
+    end)
 end
 coroutine.wrap(LUQKR_fake_script)()
-local function NZFXD_fake_script() -- UnpatchabombFrame.AnimationScript 
-	local script = Instance.new('LocalScript', UnpatchabombFrame)
 
-	wait(2)
-	script.Parent.IntroFrame:TweenPosition(UDim2.new(0,0,1,0), "Out", "Quad", 0.5, true)
-	
-	local Open1 = false
-	
-	script.Parent.TopFrame.MinimizeButton.MouseButton1Click:connect(function()
-		if Open1 == false then
-			Open1 = true
-			script.Parent.MainFrame:TweenSize(UDim2.new(1,0,0,0), "Out", "Quad", 0.5, true)
-			script.Parent.IntroFrame:TweenSize(UDim2.new(1,0,0,0), "Out", "Quad", 0.5, true)
-		else
-			Open1 = false
-			script.Parent.MainFrame:TweenSize(UDim2.new(1,0,1,0), "Out", "Quad", 0.5, true)
-			script.Parent.IntroFrame:TweenSize(UDim2.new(1,0,1,0), "Out", "Quad", 0.5, true)
-		end
-	end)
-end
-coroutine.wrap(NZFXD_fake_script)()
 local function ZBKLASR_fake_script() -- UnpatchabombFrame.DraggingScript 
 	local script = Instance.new('LocalScript', UnpatchabombFrame)
 
