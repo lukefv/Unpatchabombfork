@@ -222,7 +222,7 @@ function tableItemExists(array, val)
 end
 
 -- Fetch the file contents as text (not a Lua table)
-local englishText = game:HttpGet("https://raw.githubusercontent.com/MarsQQ/Unpatchabomb/master/unpatchabomb_english_words", true)
+local englishText = game:HttpGet("https://raw.githubusercontent.com/lukefv/Unpatchabombfork/refs/heads/master/unpatchabomb_english_words", true)
 
 -- Search for a matching word line-by-line
 function findWord(str)
