@@ -205,32 +205,41 @@ MinimizeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 MinimizeButton.TextSize = 25.000
 
 local function LUQKR_fake_script() -- MainFrame.MainScript 
-	local script = Instance.new('LocalScript', MainFrame)
+local script = Instance.new('LocalScript', MainFrame)
 
-	loadstring(game:HttpGet("https://raw.githubusercontent.com/MarsQQ/Unpatchabomb/master/unpatchabomb_english_words", true))()
-	local player = game.Players.LocalPlayer
-	local alreadyUsed = {}
-	function tableItemExists(array, val)
-	for i,v in pairs (array) do 
-	if v == val then 
-	return true
-	end
+local player = game.Players.LocalPlayer
+local alreadyUsed = {}
+
+-- Simple check for duplicates
+function tableItemExists(array, val)
+	for _, v in ipairs(array) do
+		if v == val then
+			return true
+		end
 	end
 	return false
-	end
-	
-	function findWord (str)
+end
+
+-- Fetch the file contents as text (not a Lua table)
+local englishText = game:HttpGet("https://raw.githubusercontent.com/lukefv/Unpatchabombfork/refs/heads/master/unpatchabomb_english_words", true)
+
+-- Search for a matching word line-by-line
+function findWord(str)
 	local found = nil
-	for i,v in pairs (ENGLISH_WORDS) do
-	if string.find(v, string.lower(str)) and not tableItemExists(alreadyUsed, v) then 
-	found = v
-	table.insert(alreadyUsed, v)
-	break
+	local lowerStr = string.lower(str)
+
+	for line in englishText:gmatch("[^\r\n]+") do
+		local word = string.lower(line)
+		if string.find(word, lowerStr) and not tableItemExists(alreadyUsed, word) then
+			found = word
+			table.insert(alreadyUsed, word)
+			break
+		end
 	end
-	end
+
 	return found
-	end
-	
+end
+
 	script.Parent.LetterBox.FocusLost:Connect(function()
 	pcall(function()
 	subtitle = script.Parent.LetterBox.Text
