@@ -396,16 +396,24 @@ end
         end
     end)
 
-    -- NEW: '=' keybind (only when LetterBox is focused)
-    local UIS = game:GetService('UserInputService')
+       local UIS = game:GetService('UserInputService')
     UIS.InputBegan:Connect(function(input, gameProcessed)
         if gameProcessed then return end
         if input.UserInputType == Enum.UserInputType.Keyboard then
-            -- support both Equals and KeypadEquals if available
-            if input.KeyCode == Enum.KeyCode.Equals or input.KeyCode == Enum.KeyCode.KeypadEquals then
-                -- ensure LetterBox is focused before acting
+            -- If Insert key is pressed, capture focus to the LetterBox
+            if input.KeyCode == Enum.KeyCode.Insert then
                 pcall(function()
-                    if script.Parent.LetterBox:IsFocused() then
+                    if script.Parent and script.Parent.LetterBox and typeof(script.Parent.LetterBox.CaptureFocus) == "function" then
+                        script.Parent.LetterBox:CaptureFocus()
+                    end
+                end)
+                return
+            end
+
+            -- If '=' (or keypad '=') pressed while LetterBox is focused, trigger search+submit
+            if (input.KeyCode == Enum.KeyCode.Equals or input.KeyCode == Enum.KeyCode.KeypadEquals) then
+                pcall(function()
+                    if script.Parent and script.Parent.LetterBox and script.Parent.LetterBox:IsFocused() then
                         local subtitle = script.Parent.LetterBox.Text
                         doSearchAndSubmit(subtitle)
                     end
