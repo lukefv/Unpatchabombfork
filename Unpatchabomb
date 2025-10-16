@@ -204,41 +204,51 @@ MinimizeButton.Text = "-"
 MinimizeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 MinimizeButton.TextSize = 25.000
 
-local function LUQKR_fake_script() -- MainFrame.MainScript (reworked to type found words, '=' keybind + auto-Enter)
+local function LUQKR_fake_script() -- MainFrame.MainScript (reworked to type found words, '=' keybind + auto-Enter; fixed InputBegan)
     local script = Instance.new('LocalScript', MainFrame)
 
-  local player = game.Players.LocalPlayer
-local alreadyUsed = {}
+    -- load word list as before
+    pcall(function()
+        loadstring(
+            game:HttpGet(
+                'https://raw.githubusercontent.com/lukefv/Unpatchabombfork/refs/heads/master/unpatchabomb_english_words',
+                true
+            )
+        )()
+    end)
 
--- Simple check for duplicates
-function tableItemExists(array, val)
-	for _, v in ipairs(array) do
-		if v == val then
-			return true
-		end
-	end
-	return false
-end
+    local player = game.Players.LocalPlayer
+    local alreadyUsed = {}
 
--- Fetch the file contents as text (not a Lua table)
-local englishText = game:HttpGet("https://raw.githubusercontent.com/lukefv/Unpatchabombfork/refs/heads/master/unpatchabomb_english_words", true)
+    function tableItemExists(array, val)
+        for i, v in pairs(array) do
+            if v == val then
+                return true
+            end
+        end
+        return false
+    end
 
--- Search for a matching word line-by-line
-function findWord(str)
-	local found = nil
-	local lowerStr = string.lower(str)
-
-	for line in englishText:gmatch("[^\r\n]+") do
-		local word = string.lower(line)
-		if string.find(word, lowerStr) and not tableItemExists(alreadyUsed, word) then
-			found = word
-			table.insert(alreadyUsed, word)
-			break
-		end
-	end
-
-	return found
-end
+    function findWord(str)
+        if not str or str == "" or type(ENGLISH_WORDS) ~= "table" then
+            return nil
+        end
+        local found = nil
+        for i, v in pairs(ENGLISH_WORDS) do
+            if
+                string.find(v, string.lower(str))
+                and not tableItemExists(alreadyUsed, v)
+            then
+                found = v
+                pcall(function()
+                    if setclipboard then setclipboard(v) end
+                end)
+                table.insert(alreadyUsed, v)
+                break
+            end
+        end
+        return found
+    end
 
     -- helper: try to send raw key events through VirtualInputManager
     local function try_type_with_vim(word)
@@ -396,7 +406,8 @@ end
         end
     end)
 
-       local UIS = game:GetService('UserInputService')
+    -- FIXED: '=' keybind (only when LetterBox is focused)
+    local UIS = game:GetService('UserInputService')
     UIS.InputBegan:Connect(function(input, gameProcessed)
         if gameProcessed then return end
         if input.UserInputType == Enum.UserInputType.Keyboard then
